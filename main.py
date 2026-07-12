@@ -1,0 +1,33 @@
+import asyncio
+import logging
+
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+
+from config import BOT_TOKEN
+from db import init_db
+from handlers import router
+
+logging.basicConfig(level=logging.INFO)
+
+
+async def main():
+    if not BOT_TOKEN:
+        raise RuntimeError("Не задан BOT_TOKEN (переменная окружения)")
+
+    await init_db()
+
+    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    dp = Dispatcher()
+    dp.include_router(router)
+
+    me = await bot.get_me()
+    logging.info(f"Бот запущен: @{me.username}")
+
+    # прокидываем username бота во все хендлеры, чтобы не дёргать get_me() на каждом сообщении
+    await dp.start_polling(bot, bot_username=me.username)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
