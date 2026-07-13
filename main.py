@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-from config import BOT_TOKEN
+from config import BOT_TOKEN, YANDEX_API_KEY, YANDEX_FOLDER_ID
 from db import init_db
 from handlers import router
 
@@ -15,6 +15,8 @@ logging.basicConfig(level=logging.INFO)
 async def main():
     if not BOT_TOKEN:
         raise RuntimeError("Не задан BOT_TOKEN (переменная окружения)")
+    if not YANDEX_API_KEY or not YANDEX_FOLDER_ID:
+        raise RuntimeError("Не заданы YANDEX_API_KEY / YANDEX_FOLDER_ID (переменные окружения)")
 
     await init_db()
 

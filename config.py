@@ -4,8 +4,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+YANDEX_API_KEY = os.getenv("YANDEX_API_KEY")
+YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID")
+YANDEX_MODEL = os.getenv("YANDEX_MODEL", "yandexgpt/latest")
 
 # шанс, что бот ответит сам по себе, без триггера (0.03 = 3%)
 RANDOM_REPLY_CHANCE = float(os.getenv("RANDOM_REPLY_CHANCE", "0.03"))
@@ -17,7 +18,7 @@ TRIGGER_WORDS = [
     if w.strip()
 ]
 
-# сколько последних сообщений чата подтягивать в контекст для Claude
+# сколько последних сообщений чата подтягивать в контекст
 HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "30"))
 
 # путь к файлу базы данных SQLite (лёгкая встроенная БД без отдельного сервера)

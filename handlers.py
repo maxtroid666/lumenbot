@@ -4,7 +4,7 @@ from aiogram.types import Message
 
 from config import TRIGGER_WORDS, RANDOM_REPLY_CHANCE, HISTORY_LIMIT
 from db import save_message, get_history
-from claude_client import generate_reply
+from yandex_client import generate_reply
 
 router = Router()
 
@@ -40,7 +40,7 @@ async def on_message(message: Message, bot_username: str):
     text = message.text or message.caption or ""
     author = message.from_user.full_name if message.from_user else "аноним"
 
-    # запоминаем реплику в любом случае — это и есть память чата
+    # запоминаем реплику в любом случае - это и есть память чата
     await save_message(message.chat.id, "user", text, author)
 
     if not should_reply(message, bot_username):
