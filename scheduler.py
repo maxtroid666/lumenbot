@@ -4,7 +4,12 @@ from datetime import datetime, timezone, timedelta
 
 from aiogram import Bot
 
-from config import SILENCE_INITIATIVE_MINUTES, DIGEST_MORNING_HOUR, DIGEST_EVENING_HOUR
+from config import (
+    SILENCE_INITIATIVE_MINUTES,
+    DIGEST_MORNING_HOUR,
+    DIGEST_EVENING_HOUR,
+    GLOBAL_CONTEXT_UPDATE_MINUTES,
+)
 from db import (
     get_pending_followups,
     mark_followup_done,
@@ -13,16 +18,25 @@ from db import (
     get_digest_last_id,
     set_digest_last_id,
     get_messages_since,
+    get_global_context,
+    set_global_context,
+    get_context_last_id,
+    set_context_last_id,
 )
 from topics import TOPICS, DIGEST_THREAD_ID
-from yandex_client import generate_followup_nudge, generate_morning_message, generate_evening_paragraph
+from yandex_client import (
+    generate_followup_nudge,
+    generate_morning_message,
+    generate_evening_paragraph,
+    generate_global_context_update,
+)
 
 MSK = timezone(timedelta(hours=3))
 CHECK_INTERVAL_SECONDS = 300  # 5 минут
 
 
 async def background_loop(bot: Bot, chat_id: int):
-    """Единый фоновый цикл: раз в 5 минут проверяет напоминания и сводки."""
+    """Единый фоновый цикл: раз в 5 минут проверяет напоминания, сводки и глобальный контекст."""
     while True:
         try:
             await check_followups(bot, chat_id)
@@ -33,6 +47,11 @@ async def background_loop(bot: Bot, chat_id: int):
             await check_digests(bot, chat_id)
         except Exception:
             logging.exception("Ошибка при проверке сводок")
+
+        try:
+            await check_global_context(chat_id)
+        except Exception:
+            logging.exception("Ошибка при обновлении сквозной сводки")
 
         await asyncio.sleep(CHECK_INTERVAL_SECONDS)
 
@@ -78,3 +97,43 @@ async def check_digests(bot: Bot, chat_id: int):
         digest_text = "\n\n".join(parts) if parts else "Сегодня в ветках было тихо."
         await bot.send_message(chat_id, digest_text, message_thread_id=DIGEST_THREAD_ID)
         await log_digest_sent(chat_id, "evening", today)
+
+
+async def check_global_context(chat_id: int):
+    """Раз в GLOBAL_CONTEXT_UPDATE_MINUTES обновляет компактную сквозную сводку по всем темам."""
+    previous_summary, updated_at = await get_global_context(chat_id)
+
+    if updated_at:
+        last_update = datetime.strptime(updated_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - last_update < timedelta(minutes=GLOBAL_CONTEXT_UPDATE_MINUTES):
+            return  # ещё не пора
+
+    material_parts = []
+    updates_to_commit = []  # (thread_id, latest_id) - применяем только если реально были новые сообщения
+
+    for thread_id, info in TOPICS.items():
+        if thread_id in (0, DIGEST_THREAD_ID):
+            continue
+        since_id = await get_context_last_id(chat_id, thread_id)
+        history = await get_messages_since(chat_id, thread_id, since_id, max_messages=100)
+        if not history:
+            continue
+
+        lines = []
+        for _id, role, author, content in history:
+            if role == "assistant":
+                lines.append(f"Люмен: {content}")
+            else:
+                lines.append(f"{author or 'кто-то'}: {content}")
+        material_parts.append(f"[{info['name']}]\n" + "\n".join(lines))
+        updates_to_commit.append((thread_id, history[-1][0]))
+
+    if not material_parts:
+        return  # ничего нового ни в одной теме - сводку обновлять не о чем
+
+    new_material = "\n\n".join(material_parts)
+    new_summary = await generate_global_context_update(previous_summary, new_material)
+    await set_global_context(chat_id, new_summary)
+
+    for thread_id, latest_id in updates_to_commit:
+        await set_context_last_id(chat_id, thread_id, latest_id)
