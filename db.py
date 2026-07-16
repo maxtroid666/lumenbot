@@ -1,5 +1,6 @@
 import aiosqlite
 from config import DB_PATH
+from topics import SEED_CHAT_ID, SEED_TOPICS, SEED_DIGEST_THREAD_ID
 
 # thread_id = 0 используем как "без темы" (обычный чат без Topics или General-тема)
 NO_THREAD = 0
@@ -45,6 +46,31 @@ async def _migrate_summary_state(db):
         """
     )
     await db.execute("DROP TABLE summary_state_old")
+
+
+async def _seed_default_topics(db):
+    """Одноразовая миграция: переносит захардкоженные темы старого чата команды в базу,
+    чтобы после обновления бота не пришлось настраивать /setup заново вручную."""
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM topic_info WHERE chat_id = ?", (SEED_CHAT_ID,)
+    )
+    row = await cursor.fetchone()
+    if row and row[0] > 0:
+        return  # уже настроено - либо этим же сидом раньше, либо вручную через /setup
+
+    for thread_id, info in SEED_TOPICS.items():
+        await db.execute(
+            "INSERT OR IGNORE INTO topic_info (chat_id, thread_id, name, focus) VALUES (?, ?, ?, ?)",
+            (SEED_CHAT_ID, thread_id, info["name"], info.get("focus", "")),
+        )
+    await db.execute(
+        """
+        INSERT INTO chat_settings (chat_id, digest_thread_id) VALUES (?, ?)
+        ON CONFLICT(chat_id) DO UPDATE SET digest_thread_id = excluded.digest_thread_id
+        """,
+        (SEED_CHAT_ID, SEED_DIGEST_THREAD_ID),
+    )
+    await db.execute("INSERT OR IGNORE INTO known_chats (chat_id) VALUES (?)", (SEED_CHAT_ID,))
 
 
 async def init_db():
@@ -134,6 +160,34 @@ async def init_db():
             )
             """
         )
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS topic_info (
+                chat_id INTEGER NOT NULL,
+                thread_id INTEGER NOT NULL DEFAULT 0,
+                name TEXT NOT NULL,
+                focus TEXT,
+                PRIMARY KEY (chat_id, thread_id)
+            )
+            """
+        )
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS known_chats (
+                chat_id INTEGER PRIMARY KEY,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS chat_settings (
+                chat_id INTEGER PRIMARY KEY,
+                digest_thread_id INTEGER
+            )
+            """
+        )
+        await _seed_default_topics(db)
         await db.commit()
 
 
@@ -260,7 +314,7 @@ async def clear_active_dialogue(chat_id: int, thread_id: int):
         await db.commit()
 
 
-# ---------- инициатива через час тишины ----------
+# ---------- инициатива через час тишины (функции оставлены, но фоновый цикл их больше не вызывает) ----------
 
 async def _has_later_reply(chat_id: int, thread_id: int, msg_id: int, user_id: int | None) -> bool:
     async with aiosqlite.connect(DB_PATH) as db:
@@ -392,3 +446,75 @@ async def set_context_last_id(chat_id: int, thread_id: int, message_id: int):
             (chat_id, thread_id, message_id),
         )
         await db.commit()
+
+
+# ---------- многочатовость: какие чаты знает бот, темы и настройки по каждому ----------
+
+async def touch_chat(chat_id: int):
+    """Отмечает, что бот видел сообщение из этого чата - для фонового цикла по всем чатам."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("INSERT OR IGNORE INTO known_chats (chat_id) VALUES (?)", (chat_id,))
+        await db.commit()
+
+
+async def get_known_chats() -> list[int]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT chat_id FROM known_chats")
+        rows = await cursor.fetchall()
+        return [row[0] for row in rows]
+
+
+async def get_topic_info_db(chat_id: int, thread_id: int) -> tuple[str, str] | None:
+    """Название и фокус темы, если она была настроена командой /setup. None, если ещё не настраивали."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT name, focus FROM topic_info WHERE chat_id = ? AND thread_id = ?",
+            (chat_id, thread_id),
+        )
+        row = await cursor.fetchone()
+        return (row[0], row[1] or "") if row else None
+
+
+async def set_topic_info_db(chat_id: int, thread_id: int, name: str, focus: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO topic_info (chat_id, thread_id, name, focus) VALUES (?, ?, ?, ?)
+            ON CONFLICT(chat_id, thread_id) DO UPDATE SET name = excluded.name, focus = excluded.focus
+            """,
+            (chat_id, thread_id, name, focus),
+        )
+        await db.commit()
+
+
+async def get_all_topics(chat_id: int) -> list[tuple[int, str, str]]:
+    """Все настроенные темы чата: (thread_id, name, focus)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT thread_id, name, focus FROM topic_info WHERE chat_id = ?",
+            (chat_id,),
+        )
+        return await cursor.fetchall()
+
+
+async def set_digest_thread(chat_id: int, thread_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO chat_settings (chat_id, digest_thread_id) VALUES (?, ?)
+            ON CONFLICT(chat_id) DO UPDATE SET digest_thread_id = excluded.digest_thread_id
+            """,
+            (chat_id, thread_id),
+        )
+        await db.commit()
+
+
+async def get_digest_thread(chat_id: int) -> int | None:
+    """Тема, куда присылать утренние/вечерние сводки для этого чата. None, если не настроено."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT digest_thread_id FROM chat_settings WHERE chat_id = ?",
+            (chat_id,),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
