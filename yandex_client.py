@@ -126,7 +126,7 @@ FOLLOWUP_INSTRUCTION = """
 """
 
 MORNING_INSTRUCTION = """
-Дополнительная задача: напиши короткое утреннее послание (2-4 предложения) своей команде - приветствие и напутствие на день, можно с лёгкой аффирмацией. В своём голосе, без дежурных пожеланий продуктивного дня и без канцелярита.
+Дополнительная задача: напиши очень короткое утреннее послание своей команде - строго приветствие плюс ОДНО предложение-напутствие или аффирмация. Не больше двух коротких предложений суммарно. В своём голосе, без дежурных пожеланий продуктивного дня и без канцелярита. Не растягивай, не добавляй второе-третье предложение.
 """
 
 EVENING_PARAGRAPH_INSTRUCTION = """
@@ -149,7 +149,7 @@ async def generate_morning_message() -> str:
         {"role": "system", "text": system_prompt},
         {"role": "user", "text": "Доброе утро."},
     ]
-    return await _call_completion(messages, max_tokens="300", temperature=0.9)
+    return await _call_completion(messages, max_tokens="150", temperature=0.9)
 
 
 async def generate_evening_paragraph(history: list[tuple[int, str, str | None, str]], topic_name: str) -> str:
