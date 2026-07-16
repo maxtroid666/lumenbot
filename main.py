@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-from config import BOT_TOKEN, YANDEX_API_KEY, YANDEX_FOLDER_ID, TEAM_CHAT_ID
+from config import BOT_TOKEN, YANDEX_API_KEY, YANDEX_FOLDER_ID
 from db import init_db
 from handlers import router
 from scheduler import background_loop
@@ -28,8 +28,8 @@ async def main():
     me = await bot.get_me()
     logging.info(f"Бот запущен: @{me.username}")
 
-    # фоновый цикл: напоминания через час тишины + утренние/вечерние сводки
-    asyncio.create_task(background_loop(bot, TEAM_CHAT_ID))
+    # фоновый цикл: напоминания, сводки и глобальный контекст - по всем чатам, куда добавлен бот
+    asyncio.create_task(background_loop(bot))
 
     # прокидываем username бота во все хендлеры, чтобы не дёргать get_me() на каждом сообщении
     await dp.start_polling(bot, bot_username=me.username)
