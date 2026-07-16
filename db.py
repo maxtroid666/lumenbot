@@ -5,12 +5,46 @@ from config import DB_PATH
 NO_THREAD = 0
 
 
-async def _safe_alter(db, sql: str):
-    """Пытается выполнить ALTER TABLE, молча игнорируя ошибку 'столбец уже есть' (для миграции старой базы)."""
-    try:
-        await db.execute(sql)
-    except Exception:
-        pass
+async def _ensure_column(db, table: str, column: str, ddl: str):
+    """Проверяет реальные колонки таблицы через PRAGMA и добавляет недостающую."""
+    cursor = await db.execute(f"PRAGMA table_info({table})")
+    cols = [row[1] for row in await cursor.fetchall()]
+    if column not in cols:
+        await db.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+
+
+async def _migrate_summary_state(db):
+    """summary_state раньше был с PRIMARY KEY(chat_id) без thread_id - пересобираем под новую схему."""
+    cursor = await db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='summary_state'"
+    )
+    exists = await cursor.fetchone()
+    if not exists:
+        return
+
+    cursor = await db.execute("PRAGMA table_info(summary_state)")
+    cols = [row[1] for row in await cursor.fetchall()]
+    if "thread_id" in cols:
+        return  # уже новая схема
+
+    await db.execute("ALTER TABLE summary_state RENAME TO summary_state_old")
+    await db.execute(
+        """
+        CREATE TABLE summary_state (
+            chat_id INTEGER NOT NULL,
+            thread_id INTEGER NOT NULL DEFAULT 0,
+            last_message_id INTEGER NOT NULL,
+            PRIMARY KEY (chat_id, thread_id)
+        )
+        """
+    )
+    await db.execute(
+        """
+        INSERT INTO summary_state (chat_id, thread_id, last_message_id)
+        SELECT chat_id, 0, last_message_id FROM summary_state_old
+        """
+    )
+    await db.execute("DROP TABLE summary_state_old")
 
 
 async def init_db():
@@ -28,14 +62,17 @@ async def init_db():
             )
             """
         )
-        # миграция старой базы новыми колонками (если их ещё нет)
-        await _safe_alter(db, "ALTER TABLE messages ADD COLUMN telegram_user_id INTEGER")
-        await _safe_alter(db, "ALTER TABLE messages ADD COLUMN needs_followup INTEGER NOT NULL DEFAULT 0")
-        await _safe_alter(db, "ALTER TABLE messages ADD COLUMN followup_done INTEGER NOT NULL DEFAULT 0")
+        # миграция старой базы новыми колонками - проверяем реальные колонки, а не гадаем try/except
+        await _ensure_column(db, "messages", "thread_id", "thread_id INTEGER NOT NULL DEFAULT 0")
+        await _ensure_column(db, "messages", "telegram_user_id", "telegram_user_id INTEGER")
+        await _ensure_column(db, "messages", "needs_followup", "needs_followup INTEGER NOT NULL DEFAULT 0")
+        await _ensure_column(db, "messages", "followup_done", "followup_done INTEGER NOT NULL DEFAULT 0")
 
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_chat_thread ON messages (chat_id, thread_id)"
         )
+
+        await _migrate_summary_state(db)
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS summary_state (
