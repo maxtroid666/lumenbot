@@ -38,9 +38,11 @@ SILENCE_INITIATIVE_MINUTES = int(os.getenv("SILENCE_INITIATIVE_MINUTES", "60"))
 # сколько минут диалог считается "открытым" без повторного упоминания бота
 DIALOGUE_TIMEOUT_MINUTES = int(os.getenv("DIALOGUE_TIMEOUT_MINUTES", "20"))
 
-# час (по МСК) утренней и вечерней сводки в топике Люмена
-DIGEST_MORNING_HOUR = int(os.getenv("DIGEST_MORNING_HOUR", "9"))
+# время (по МСК) утренней и вечерней сводки в топике Люмена
+DIGEST_MORNING_HOUR = int(os.getenv("DIGEST_MORNING_HOUR", "10"))
+DIGEST_MORNING_MINUTE = int(os.getenv("DIGEST_MORNING_MINUTE", "1"))
 DIGEST_EVENING_HOUR = int(os.getenv("DIGEST_EVENING_HOUR", "21"))
+DIGEST_EVENING_MINUTE = int(os.getenv("DIGEST_EVENING_MINUTE", "0"))
 
 # раз в сколько минут обновлять сквозную сводку по всему чату (для "периферийного зрения" бота)
 GLOBAL_CONTEXT_UPDATE_MINUTES = int(os.getenv("GLOBAL_CONTEXT_UPDATE_MINUTES", "30"))
