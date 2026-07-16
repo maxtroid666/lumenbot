@@ -23,8 +23,14 @@ def load_personality() -> str:
         return f.read()
 
 
-def _build_system_prompt(topic_name: str | None = None, topic_focus: str | None = None) -> str:
+def _build_system_prompt(
+    topic_name: str | None = None,
+    topic_focus: str | None = None,
+    global_context: str | None = None,
+) -> str:
     base = load_personality()
+    if global_context:
+        base += f"\n\nФОН ПО ОСТАЛЬНОМУ ЧАТУ (кратко, для общей картины, не пересказывай это дословно)\n{global_context}"
     if topic_name:
         base += f"\n\nТЕКУЩАЯ ВЕТКА\nСейчас разговор происходит в теме \"{topic_name}\""
         if topic_focus:
@@ -81,8 +87,9 @@ async def generate_reply(
     history: list[tuple[str, str | None, str]],
     topic_name: str | None = None,
     topic_focus: str | None = None,
+    global_context: str | None = None,
 ) -> str:
-    system_prompt = _build_system_prompt(topic_name, topic_focus)
+    system_prompt = _build_system_prompt(topic_name, topic_focus, global_context)
     messages = _messages_to_yandex_format(system_prompt, history)
     return await _call_completion(messages)
 
@@ -160,3 +167,26 @@ async def generate_evening_paragraph(history: list[tuple[int, str, str | None, s
         {"role": "user", "text": transcript},
     ]
     return await _call_completion(messages, max_tokens="500", temperature=0.7)
+
+
+GLOBAL_CONTEXT_INSTRUCTION = """Ты помогаешь Люмену поддерживать компактную сквозную сводку по ВСЕМ веткам командного чата - это его общий фон, периферийное зрение, а НЕ подробный отчёт.
+
+Текущая сводка (может быть пустой, если её ещё не было):
+{previous_summary}
+
+Новые сообщения по веткам с прошлого обновления:
+{new_material}
+
+Обнови сводку: впиши туда новое по существу, убери то, что уже неактуально (закрытые темы, решённые вопросы), сохрани компактность - не больше 6-8 предложений или коротких пунктов по темам. Пиши по-русски, связным текстом или короткими пунктами, без канцелярита. Если ничего значимого не произошло - оставь сводку как есть или сократи её."""
+
+
+async def generate_global_context_update(previous_summary: str, new_material: str) -> str:
+    prompt = GLOBAL_CONTEXT_INSTRUCTION.format(
+        previous_summary=previous_summary or "(пока пусто)",
+        new_material=new_material,
+    )
+    messages = [
+        {"role": "system", "text": "Ты помогаешь вести компактную сквозную сводку по чату."},
+        {"role": "user", "text": prompt},
+    ]
+    return await _call_completion(messages, max_tokens="400", temperature=0.4)
