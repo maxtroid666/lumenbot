@@ -28,3 +28,16 @@ HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "30"))
 
 # путь к файлу базы данных SQLite (лёгкая встроенная БД без отдельного сервера)
 DB_PATH = os.getenv("DB_PATH", "bot_memory.db")
+
+# id основного командного чата (с темами/topics) - здесь работают напоминания и сводки
+TEAM_CHAT_ID = int(os.getenv("TEAM_CHAT_ID", "-1004380656891"))
+
+# через сколько минут тишины после "весомого" сообщения бот может сам напомнить о нём
+SILENCE_INITIATIVE_MINUTES = int(os.getenv("SILENCE_INITIATIVE_MINUTES", "60"))
+
+# сколько минут диалог считается "открытым" без повторного упоминания бота
+DIALOGUE_TIMEOUT_MINUTES = int(os.getenv("DIALOGUE_TIMEOUT_MINUTES", "20"))
+
+# час (по МСК) утренней и вечерней сводки в топике Люмена
+DIGEST_MORNING_HOUR = int(os.getenv("DIGEST_MORNING_HOUR", "9"))
+DIGEST_EVENING_HOUR = int(os.getenv("DIGEST_EVENING_HOUR", "21"))
