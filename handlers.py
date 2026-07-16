@@ -14,6 +14,7 @@ from db import (
     get_active_dialogue,
     set_active_dialogue,
     clear_active_dialogue,
+    get_global_context,
 )
 from topics import get_topic_info
 from yandex_client import generate_reply, generate_summary
@@ -133,7 +134,10 @@ async def on_message(message: Message, bot_username: str):
 
     topic = get_topic_info(thread_id)
     history = await get_history(chat_id, thread_id, HISTORY_LIMIT)
-    reply_text = await generate_reply(history, topic_name=topic["name"], topic_focus=topic["focus"])
+    global_context, _ = await get_global_context(chat_id)
+    reply_text = await generate_reply(
+        history, topic_name=topic["name"], topic_focus=topic["focus"], global_context=global_context,
+    )
 
     await save_message(chat_id, "assistant", reply_text, thread_id=thread_id)
     await message.reply(reply_text)
