@@ -41,3 +41,6 @@ DIALOGUE_TIMEOUT_MINUTES = int(os.getenv("DIALOGUE_TIMEOUT_MINUTES", "20"))
 # час (по МСК) утренней и вечерней сводки в топике Люмена
 DIGEST_MORNING_HOUR = int(os.getenv("DIGEST_MORNING_HOUR", "9"))
 DIGEST_EVENING_HOUR = int(os.getenv("DIGEST_EVENING_HOUR", "21"))
+
+# раз в сколько минут обновлять сквозную сводку по всему чату (для "периферийного зрения" бота)
+GLOBAL_CONTEXT_UPDATE_MINUTES = int(os.getenv("GLOBAL_CONTEXT_UPDATE_MINUTES", "30"))
