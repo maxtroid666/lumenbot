@@ -15,8 +15,12 @@ from db import (
     set_active_dialogue,
     clear_active_dialogue,
     get_global_context,
+    touch_chat,
+    get_topic_info_db,
+    set_topic_info_db,
+    get_all_topics,
+    set_digest_thread,
 )
-from topics import get_topic_info
 from yandex_client import generate_reply, generate_summary
 
 router = Router()
@@ -61,21 +65,47 @@ def should_reply_by_trigger(message: Message, bot_username: str) -> bool:
     if any(word in text for word in TRIGGER_WORDS):
         return True
 
-    # случайное включение в разговор
+    # случайное включение в разговор (по умолчанию отключено - RANDOM_REPLY_CHANCE = 0)
     if random.random() < RANDOM_REPLY_CHANCE:
         return True
 
     return False
 
 
+async def _resolve_topic(chat_id: int, thread_id: int) -> tuple[str, str]:
+    """Название и фокус текущей темы. Если тема не настроена командой /setup - дефолт по номеру."""
+    row = await get_topic_info_db(chat_id, thread_id)
+    if row:
+        return row
+    if thread_id == 0:
+        return "Общее", ""
+    return f"тема {thread_id}", ""
+
+
+def _find_referenced_topic(
+    text: str,
+    topics: list[tuple[int, str, str]],
+    current_thread_id: int,
+    digest_thread_id: int | None,
+) -> tuple[int | None, str | None]:
+    """Ищет в тексте упоминание названия ДРУГОЙ настроенной темы этого же чата - для прицельного обращения."""
+    low = text.lower()
+    for thread_id, name, focus in topics:
+        if thread_id == current_thread_id or thread_id == digest_thread_id:
+            continue
+        if name and name.lower() in low:
+            return thread_id, name
+    return None, None
+
+
 async def _do_summary(message: Message):
     chat_id = message.chat.id
     thread_id = message.message_thread_id or 0
-    topic = get_topic_info(thread_id)
+    topic_name, _ = await _resolve_topic(chat_id, thread_id)
 
     since_id = await get_last_summary_id(chat_id, thread_id)
     history = await get_messages_since(chat_id, thread_id, since_id)
-    summary_text = await generate_summary(history, topic_name=topic["name"])
+    summary_text = await generate_summary(history, topic_name=topic_name)
 
     latest_id = await get_latest_message_id(chat_id, thread_id)
     if latest_id:
@@ -83,6 +113,41 @@ async def _do_summary(message: Message):
 
     await save_message(chat_id, "assistant", summary_text, thread_id=thread_id)
     await message.reply(summary_text)
+
+
+@router.message(Command("setup"))
+async def cmd_setup(message: Message):
+    """Настройка названия/фокуса текущей темы: /setup Название - фокус (необязательно)."""
+    text = message.text or ""
+    rest = text.partition(" ")[2].strip()
+    if not rest:
+        await message.reply(
+            "Формат: /setup Название темы - фокус (необязательно)\n"
+            "Пример: /setup Дизайн - обсуждение визуального стиля"
+        )
+        return
+
+    if " - " in rest:
+        name, focus = rest.split(" - ", 1)
+    else:
+        name, focus = rest, ""
+
+    thread_id = message.message_thread_id or 0
+    await set_topic_info_db(message.chat.id, thread_id, name.strip(), focus.strip())
+
+    reply = f"Записал: эта тема - «{name.strip()}»"
+    if focus.strip():
+        reply += f" ({focus.strip()})"
+    reply += "."
+    await message.reply(reply)
+
+
+@router.message(Command("setup_digest"))
+async def cmd_setup_digest(message: Message):
+    """Назначает текущую тему местом для утренних/вечерних сводок этого чата."""
+    thread_id = message.message_thread_id or 0
+    await set_digest_thread(message.chat.id, thread_id)
+    await message.reply("Записал: сюда буду присылать утренние и вечерние сводки.")
 
 
 @router.message(Command("summary"))
@@ -97,6 +162,9 @@ async def on_message(message: Message, bot_username: str):
     user_id = message.from_user.id if message.from_user else None
     thread_id = message.message_thread_id or 0
     chat_id = message.chat.id
+
+    # отмечаем чат как известный - фоновый цикл сам найдёт все такие чаты
+    await touch_chat(chat_id)
 
     # реплай на бота не считается "реплаем на кого-то" в смысле весомости
     is_reply_to_bot = bool(
@@ -132,16 +200,29 @@ async def on_message(message: Message, bot_username: str):
             await set_active_dialogue(chat_id, thread_id, user_id)
         return
 
-    topic = get_topic_info(thread_id)
+    topic_name, topic_focus = await _resolve_topic(chat_id, thread_id)
     history = await get_history(chat_id, thread_id, HISTORY_LIMIT)
     global_context, _ = await get_global_context(chat_id)
+
+    # прицельное обращение к другой теме этого же чата по названию ("а что там было про дизайн")
+    all_topics = await get_all_topics(chat_id)
+    ref_thread_id, ref_name = _find_referenced_topic(text, all_topics, thread_id, None)
+    referenced_topic = None
+    if ref_thread_id is not None:
+        ref_history = await get_history(chat_id, ref_thread_id, 15)
+        referenced_topic = (ref_name, ref_history)
+
     reply_text = await generate_reply(
-        history, topic_name=topic["name"], topic_focus=topic["focus"], global_context=global_context,
+        history,
+        topic_name=topic_name,
+        topic_focus=topic_focus,
+        global_context=global_context,
+        referenced_topic=referenced_topic,
     )
 
     await save_message(chat_id, "assistant", reply_text, thread_id=thread_id)
     await message.reply(reply_text)
 
-    # диалог считается открытым до тайм-аута или до "добро"
+    # диалог считается открытым до тайм-аута (15 мин по умолчанию) или до "добро"
     if user_id:
         await set_active_dialogue(chat_id, thread_id, user_id)
