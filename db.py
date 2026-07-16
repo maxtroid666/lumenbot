@@ -106,6 +106,25 @@ async def init_db():
         )
         await db.execute(
             """
+            CREATE TABLE IF NOT EXISTS global_context (
+                chat_id INTEGER PRIMARY KEY,
+                summary TEXT NOT NULL DEFAULT '',
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS context_progress (
+                chat_id INTEGER NOT NULL,
+                thread_id INTEGER NOT NULL DEFAULT 0,
+                last_message_id INTEGER NOT NULL,
+                PRIMARY KEY (chat_id, thread_id)
+            )
+            """
+        )
+        await db.execute(
+            """
             CREATE TABLE IF NOT EXISTS digest_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 chat_id INTEGER NOT NULL,
@@ -324,5 +343,52 @@ async def log_digest_sent(chat_id: int, kind: str, date_str: str):
         await db.execute(
             "INSERT OR IGNORE INTO digest_log (chat_id, kind, sent_date) VALUES (?, ?, ?)",
             (chat_id, kind, date_str),
+        )
+        await db.commit()
+
+
+# ---------- глобальная сквозная сводка по всему чату (фон для ответов) ----------
+
+async def get_global_context(chat_id: int) -> tuple[str, str | None]:
+    """Возвращает (текст сводки, когда обновлялась). Текст пустой, если сводки ещё не было."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT summary, updated_at FROM global_context WHERE chat_id = ?",
+            (chat_id,),
+        )
+        row = await cursor.fetchone()
+        return (row[0], row[1]) if row else ("", None)
+
+
+async def set_global_context(chat_id: int, summary: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO global_context (chat_id, summary, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(chat_id) DO UPDATE SET summary = excluded.summary, updated_at = CURRENT_TIMESTAMP
+            """,
+            (chat_id, summary),
+        )
+        await db.commit()
+
+
+async def get_context_last_id(chat_id: int, thread_id: int) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT last_message_id FROM context_progress WHERE chat_id = ? AND thread_id = ?",
+            (chat_id, thread_id),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else 0
+
+
+async def set_context_last_id(chat_id: int, thread_id: int, message_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO context_progress (chat_id, thread_id, last_message_id) VALUES (?, ?, ?)
+            ON CONFLICT(chat_id, thread_id) DO UPDATE SET last_message_id = excluded.last_message_id
+            """,
+            (chat_id, thread_id, message_id),
         )
         await db.commit()
