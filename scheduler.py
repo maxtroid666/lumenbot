@@ -7,7 +7,9 @@ from aiogram import Bot
 from config import (
     SILENCE_INITIATIVE_MINUTES,
     DIGEST_MORNING_HOUR,
+    DIGEST_MORNING_MINUTE,
     DIGEST_EVENING_HOUR,
+    DIGEST_EVENING_MINUTE,
     GLOBAL_CONTEXT_UPDATE_MINUTES,
 )
 from db import (
@@ -75,12 +77,20 @@ async def check_digests(bot: Bot, chat_id: int):
     now = datetime.now(MSK)
     today = now.strftime("%Y-%m-%d")
 
-    if now.hour >= DIGEST_MORNING_HOUR and not await was_digest_sent(chat_id, "morning", today):
+    morning_target = now.replace(hour=DIGEST_MORNING_HOUR, minute=DIGEST_MORNING_MINUTE, second=0, microsecond=0)
+    if (
+        morning_target <= now < morning_target + timedelta(hours=1)
+        and not await was_digest_sent(chat_id, "morning", today)
+    ):
         text = await generate_morning_message()
         await bot.send_message(chat_id, text, message_thread_id=DIGEST_THREAD_ID)
         await log_digest_sent(chat_id, "morning", today)
 
-    if now.hour >= DIGEST_EVENING_HOUR and not await was_digest_sent(chat_id, "evening", today):
+    evening_target = now.replace(hour=DIGEST_EVENING_HOUR, minute=DIGEST_EVENING_MINUTE, second=0, microsecond=0)
+    if (
+        evening_target <= now < evening_target + timedelta(hours=1)
+        and not await was_digest_sent(chat_id, "evening", today)
+    ):
         parts = []
         for thread_id, info in TOPICS.items():
             if thread_id in (0, DIGEST_THREAD_ID):
