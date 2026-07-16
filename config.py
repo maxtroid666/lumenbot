@@ -13,8 +13,8 @@ YANDEX_API_KEY = _clean(os.getenv("YANDEX_API_KEY"))
 YANDEX_FOLDER_ID = _clean(os.getenv("YANDEX_FOLDER_ID"))
 YANDEX_MODEL = _clean(os.getenv("YANDEX_MODEL", "yandexgpt/latest"))
 
-# шанс, что бот ответит сам по себе, без триггера (0.03 = 3%)
-RANDOM_REPLY_CHANCE = float(os.getenv("RANDOM_REPLY_CHANCE", "0.03"))
+# шанс, что бот ответит сам по себе, без триггера (0 = отключено, никогда не пишет без повода)
+RANDOM_REPLY_CHANCE = float(os.getenv("RANDOM_REPLY_CHANCE", "0"))
 
 # слова-триггеры через запятую, при появлении которых бот включается в разговор
 TRIGGER_WORDS = [
@@ -29,14 +29,11 @@ HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "30"))
 # путь к файлу базы данных SQLite (лёгкая встроенная БД без отдельного сервера)
 DB_PATH = os.getenv("DB_PATH", "bot_memory.db")
 
-# id основного командного чата (с темами/topics) - здесь работают напоминания и сводки
-TEAM_CHAT_ID = int(os.getenv("TEAM_CHAT_ID", "-1004380656891"))
-
 # через сколько минут тишины после "весомого" сообщения бот может сам напомнить о нём
 SILENCE_INITIATIVE_MINUTES = int(os.getenv("SILENCE_INITIATIVE_MINUTES", "60"))
 
 # сколько минут диалог считается "открытым" без повторного упоминания бота
-DIALOGUE_TIMEOUT_MINUTES = int(os.getenv("DIALOGUE_TIMEOUT_MINUTES", "20"))
+DIALOGUE_TIMEOUT_MINUTES = int(os.getenv("DIALOGUE_TIMEOUT_MINUTES", "15"))
 
 # время (по МСК) утренней и вечерней сводки в топике Люмена
 DIGEST_MORNING_HOUR = int(os.getenv("DIGEST_MORNING_HOUR", "10"))
