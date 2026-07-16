@@ -13,6 +13,7 @@ from config import (
     GLOBAL_CONTEXT_UPDATE_MINUTES,
 )
 from db import (
+    get_known_chats,
     get_pending_followups,
     mark_followup_done,
     was_digest_sent,
@@ -24,8 +25,9 @@ from db import (
     set_global_context,
     get_context_last_id,
     set_context_last_id,
+    get_all_topics,
+    get_digest_thread,
 )
-from topics import TOPICS, DIGEST_THREAD_ID
 from yandex_client import (
     generate_followup_nudge,
     generate_morning_message,
@@ -37,23 +39,22 @@ MSK = timezone(timedelta(hours=3))
 CHECK_INTERVAL_SECONDS = 300  # 5 минут
 
 
-async def background_loop(bot: Bot, chat_id: int):
-    """Единый фоновый цикл: раз в 5 минут проверяет напоминания, сводки и глобальный контекст."""
+async def background_loop(bot: Bot):
+    """Единый фоновый цикл: раз в 5 минут проходит по ВСЕМ известным чатам.
+    Бот сам пишет ТОЛЬКО утреннюю/вечернюю сводку в свою ветку - никаких напоминаний
+    и случайных вставок в рабочих темах (см. check_followups ниже, он больше не вызывается)."""
     while True:
-        try:
-            await check_followups(bot, chat_id)
-        except Exception:
-            logging.exception("Ошибка при проверке напоминаний")
+        chats = await get_known_chats()
+        for chat_id in chats:
+            try:
+                await check_digests(bot, chat_id)
+            except Exception:
+                logging.exception(f"Ошибка при проверке сводок ({chat_id})")
 
-        try:
-            await check_digests(bot, chat_id)
-        except Exception:
-            logging.exception("Ошибка при проверке сводок")
-
-        try:
-            await check_global_context(chat_id)
-        except Exception:
-            logging.exception("Ошибка при обновлении сквозной сводки")
+            try:
+                await check_global_context(chat_id)
+            except Exception:
+                logging.exception(f"Ошибка при обновлении сквозной сводки ({chat_id})")
 
         await asyncio.sleep(CHECK_INTERVAL_SECONDS)
 
@@ -74,6 +75,10 @@ async def check_followups(bot: Bot, chat_id: int):
 
 
 async def check_digests(bot: Bot, chat_id: int):
+    digest_thread_id = await get_digest_thread(chat_id)
+    if digest_thread_id is None:
+        return  # для этого чата сводки ещё не настроены (/setup_digest)
+
     now = datetime.now(MSK)
     today = now.strftime("%Y-%m-%d")
 
@@ -83,7 +88,7 @@ async def check_digests(bot: Bot, chat_id: int):
         and not await was_digest_sent(chat_id, "morning", today)
     ):
         text = await generate_morning_message()
-        await bot.send_message(chat_id, text, message_thread_id=DIGEST_THREAD_ID)
+        await bot.send_message(chat_id, text, message_thread_id=digest_thread_id)
         await log_digest_sent(chat_id, "morning", today)
 
     evening_target = now.replace(hour=DIGEST_EVENING_HOUR, minute=DIGEST_EVENING_MINUTE, second=0, microsecond=0)
@@ -91,26 +96,27 @@ async def check_digests(bot: Bot, chat_id: int):
         evening_target <= now < evening_target + timedelta(hours=1)
         and not await was_digest_sent(chat_id, "evening", today)
     ):
+        topics = await get_all_topics(chat_id)
         parts = []
-        for thread_id, info in TOPICS.items():
-            if thread_id in (0, DIGEST_THREAD_ID):
+        for thread_id, name, focus in topics:
+            if thread_id == digest_thread_id:
                 continue
             since_id = await get_digest_last_id(chat_id, thread_id)
             history = await get_messages_since(chat_id, thread_id, since_id)
             if not history:
                 continue
-            paragraph = await generate_evening_paragraph(history, info["name"])
-            parts.append(f"<b>{info['name']}</b>\n{paragraph}")
+            paragraph = await generate_evening_paragraph(history, name)
+            parts.append(f"<b>{name}</b>\n{paragraph}")
             latest_id = history[-1][0]
             await set_digest_last_id(chat_id, thread_id, latest_id)
 
         digest_text = "\n\n".join(parts) if parts else "Сегодня в ветках было тихо."
-        await bot.send_message(chat_id, digest_text, message_thread_id=DIGEST_THREAD_ID)
+        await bot.send_message(chat_id, digest_text, message_thread_id=digest_thread_id)
         await log_digest_sent(chat_id, "evening", today)
 
 
 async def check_global_context(chat_id: int):
-    """Раз в GLOBAL_CONTEXT_UPDATE_MINUTES обновляет компактную сквозную сводку по всем темам."""
+    """Раз в GLOBAL_CONTEXT_UPDATE_MINUTES обновляет компактную сквозную сводку по всем темам чата."""
     previous_summary, updated_at = await get_global_context(chat_id)
 
     if updated_at:
@@ -118,11 +124,14 @@ async def check_global_context(chat_id: int):
         if datetime.now(timezone.utc) - last_update < timedelta(minutes=GLOBAL_CONTEXT_UPDATE_MINUTES):
             return  # ещё не пора
 
+    digest_thread_id = await get_digest_thread(chat_id)
+    topics = await get_all_topics(chat_id)
+
     material_parts = []
     updates_to_commit = []  # (thread_id, latest_id) - применяем только если реально были новые сообщения
 
-    for thread_id, info in TOPICS.items():
-        if thread_id in (0, DIGEST_THREAD_ID):
+    for thread_id, name, focus in topics:
+        if thread_id == digest_thread_id:
             continue
         since_id = await get_context_last_id(chat_id, thread_id)
         history = await get_messages_since(chat_id, thread_id, since_id, max_messages=100)
@@ -135,7 +144,7 @@ async def check_global_context(chat_id: int):
                 lines.append(f"Люмен: {content}")
             else:
                 lines.append(f"{author or 'кто-то'}: {content}")
-        material_parts.append(f"[{info['name']}]\n" + "\n".join(lines))
+        material_parts.append(f"[{name}]\n" + "\n".join(lines))
         updates_to_commit.append((thread_id, history[-1][0]))
 
     if not material_parts:
