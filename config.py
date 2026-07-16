@@ -3,7 +3,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
 def _clean(value: str | None) -> str | None:
     """Убирает случайные пробелы/переносы строк, которые могли попасть при копипасте ключа."""
     return value.strip() if value else value

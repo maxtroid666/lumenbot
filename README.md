@@ -18,9 +18,12 @@
 3. Обязательно выполнить `/setprivacy` -> выбрать бота -> **Disable**.
    Без этого бот в группах видит только сообщения, адресованные ему напрямую, и не сможет читать общий чат для памяти и триггеров.
 
-## Шаг 2. Получить ключ Anthropic API
+## Шаг 2. Получить доступ к YandexGPT (Yandex Cloud)
 
-В консоли Anthropic (console.anthropic.com) создать API-ключ - это `ANTHROPIC_API_KEY`.
+1. Зайти на console.cloud.yandex.ru, создать облако и каталог (folder), если их ещё нет.
+2. Скопировать **идентификатор каталога** (Folder ID) - виден в консоли рядом с названием каталога. Это `YANDEX_FOLDER_ID`.
+3. Создать сервисный аккаунт (Service accounts -> Create) с ролью `ai.languageModels.user`.
+4. У этого сервисного аккаунта создать API-ключ (API keys -> Create API key). Это `YANDEX_API_KEY`, показывается один раз.
 
 ## Шаг 3. Деплой на Railway
 
@@ -28,7 +31,8 @@
 2. В Railway: New Project -> Deploy from GitHub repo.
 3. В Variables (переменные окружения) задать:
    - `BOT_TOKEN`
-   - `ANTHROPIC_API_KEY`
+   - `YANDEX_API_KEY`
+   - `YANDEX_FOLDER_ID`
    - остальные - по желанию, дефолты уже разумные (см. `.env.example`)
 4. **Важно про память**: файловая система Railway по умолчанию временная (эфемерная) - при каждом передеплое файл базы данных `bot_memory.db` обнулится. Чтобы память сохранялась постоянно, нужно добавить Railway Volume (постоянный диск) и примонтировать его в путь, указанный в `DB_PATH`. Это делается в настройках сервиса -> Volumes -> Add Volume.
 
