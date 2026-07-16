@@ -109,3 +109,54 @@ async def generate_summary(
         {"role": "user", "text": transcript},
     ]
     return await _call_completion(messages, max_tokens="1200", temperature=0.3)
+
+
+FOLLOWUP_INSTRUCTION = """
+Дополнительная задача: час назад в переписке прозвучало сообщение, которое осталось без ответа. Напиши короткую (1-2 предложения) реплику в своём голосе, которая мягко возвращает внимание к нему - не отчитывай, не дави, просто аккуратно обозначь, что это всё ещё висит. Обратись к автору по имени, но не выдумывай отчество или фамилию - используй только то имя, что дано.
+
+Сообщение: "{content}"
+Автор: {author}
+"""
+
+MORNING_INSTRUCTION = """
+Дополнительная задача: напиши короткое утреннее послание (2-4 предложения) своей команде - приветствие и напутствие на день, можно с лёгкой аффирмацией. В своём голосе, без дежурных пожеланий продуктивного дня и без канцелярита.
+"""
+
+EVENING_PARAGRAPH_INSTRUCTION = """
+Дополнительная задача: перед тобой кусок переписки из ветки "{topic_name}" за день. Напиши по ней ОДИН связный абзац (3-6 предложений) в своём голосе - не структурированный список, а цельное повествование о том, что происходило в этой ветке. Если переписки почти нет или она не по делу - напиши короткую фразу в духе "в этой ветке сегодня было тихо", не выдумывай содержание.
+"""
+
+
+async def generate_followup_nudge(author: str, content: str) -> str:
+    system_prompt = load_personality() + "\n\n" + FOLLOWUP_INSTRUCTION.format(content=content, author=author)
+    messages = [
+        {"role": "system", "text": system_prompt},
+        {"role": "user", "text": "Напиши реплику."},
+    ]
+    return await _call_completion(messages, max_tokens="300", temperature=0.8)
+
+
+async def generate_morning_message() -> str:
+    system_prompt = load_personality() + "\n\n" + MORNING_INSTRUCTION
+    messages = [
+        {"role": "system", "text": system_prompt},
+        {"role": "user", "text": "Доброе утро."},
+    ]
+    return await _call_completion(messages, max_tokens="300", temperature=0.9)
+
+
+async def generate_evening_paragraph(history: list[tuple[int, str, str | None, str]], topic_name: str) -> str:
+    lines = []
+    for _id, role, author, content in history:
+        if role == "assistant":
+            lines.append(f"Люмен: {content}")
+        else:
+            lines.append(f"{author or 'кто-то'}: {content}")
+    transcript = "\n".join(lines)
+
+    system_prompt = load_personality() + "\n\n" + EVENING_PARAGRAPH_INSTRUCTION.format(topic_name=topic_name)
+    messages = [
+        {"role": "system", "text": system_prompt},
+        {"role": "user", "text": transcript},
+    ]
+    return await _call_completion(messages, max_tokens="500", temperature=0.7)
