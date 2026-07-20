@@ -27,10 +27,25 @@ def _build_system_prompt(
     topic_name: str | None = None,
     topic_focus: str | None = None,
     global_context: str | None = None,
+    referenced_topic: tuple[str, list[tuple[str, str | None, str]]] | None = None,
 ) -> str:
     base = load_personality()
     if global_context:
         base += f"\n\nФОН ПО ОСТАЛЬНОМУ ЧАТУ (кратко, для общей картины, не пересказывай это дословно)\n{global_context}"
+    if referenced_topic:
+        ref_name, ref_history = referenced_topic
+        lines = []
+        for role, author, content in ref_history:
+            if role == "assistant":
+                lines.append(f"Люмен: {content}")
+            else:
+                lines.append(f"{author or 'кто-то'}: {content}")
+        transcript = "\n".join(lines)
+        base += (
+            f"\n\nПО ЗАПРОСУ - СВЕЖЕЕ ИЗ ТЕМЫ \"{ref_name}\"\n{transcript}\n\n"
+            f"Похоже, человек спрашивает именно про тему \"{ref_name}\" - используй это, чтобы ответить по существу, "
+            f"а не отвечать в контексте текущей ветки."
+        )
     if topic_name:
         base += f"\n\nТЕКУЩАЯ ВЕТКА\nСейчас разговор происходит в теме \"{topic_name}\""
         if topic_focus:
@@ -88,8 +103,9 @@ async def generate_reply(
     topic_name: str | None = None,
     topic_focus: str | None = None,
     global_context: str | None = None,
+    referenced_topic: tuple[str, list[tuple[str, str | None, str]]] | None = None,
 ) -> str:
-    system_prompt = _build_system_prompt(topic_name, topic_focus, global_context)
+    system_prompt = _build_system_prompt(topic_name, topic_focus, global_context, referenced_topic)
     messages = _messages_to_yandex_format(system_prompt, history)
     return await _call_completion(messages)
 
