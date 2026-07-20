@@ -28,7 +28,7 @@ from db import (
     get_all_topics,
     get_digest_thread,
 )
-from yandex_client import (
+from claude_client import (
     generate_followup_nudge,
     generate_morning_message,
     generate_evening_paragraph,
@@ -41,16 +41,13 @@ CHECK_INTERVAL_SECONDS = 300  # 5 минут
 
 async def background_loop(bot: Bot):
     """Единый фоновый цикл: раз в 5 минут проходит по ВСЕМ известным чатам.
-    Бот сам пишет ТОЛЬКО утреннюю/вечернюю сводку в свою ветку - никаких напоминаний
-    и случайных вставок в рабочих темах (см. check_followups ниже, он больше не вызывается)."""
+    Бот НИКОГДА не пишет в чат сам по себе - ни утренних/вечерних сводок (check_digests
+    больше не вызывается), ни напоминаний (check_followups тоже). Единственное, что тут
+    происходит - тихое обновление внутренней сквозной сводки (check_global_context),
+    она никуда не отправляется, а только используется как фон для обычных ответов."""
     while True:
         chats = await get_known_chats()
         for chat_id in chats:
-            try:
-                await check_digests(bot, chat_id)
-            except Exception:
-                logging.exception(f"Ошибка при проверке сводок ({chat_id})")
-
             try:
                 await check_global_context(chat_id)
             except Exception:

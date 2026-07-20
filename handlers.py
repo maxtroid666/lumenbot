@@ -21,7 +21,7 @@ from db import (
     get_all_topics,
     set_digest_thread,
 )
-from yandex_client import generate_reply, generate_summary
+from claude_client import generate_reply, generate_summary
 
 router = Router()
 
@@ -65,7 +65,7 @@ def should_reply_by_trigger(message: Message, bot_username: str) -> bool:
     if any(word in text for word in TRIGGER_WORDS):
         return True
 
-    # случайное включение в разговор (по умолчанию отключено - RANDOM_REPLY_CHANCE = 0)
+    # случайное включение в разговор
     if random.random() < RANDOM_REPLY_CHANCE:
         return True
 
@@ -223,6 +223,6 @@ async def on_message(message: Message, bot_username: str):
     await save_message(chat_id, "assistant", reply_text, thread_id=thread_id)
     await message.reply(reply_text)
 
-    # диалог считается открытым до тайм-аута (15 мин по умолчанию) или до "добро"
+    # диалог считается открытым до тайм-аута или до "добро"
     if user_id:
         await set_active_dialogue(chat_id, thread_id, user_id)

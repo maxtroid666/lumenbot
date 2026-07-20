@@ -9,9 +9,8 @@ def _clean(value: str | None) -> str | None:
 
 
 BOT_TOKEN = _clean(os.getenv("BOT_TOKEN"))
-YANDEX_API_KEY = _clean(os.getenv("YANDEX_API_KEY"))
-YANDEX_FOLDER_ID = _clean(os.getenv("YANDEX_FOLDER_ID"))
-YANDEX_MODEL = _clean(os.getenv("YANDEX_MODEL", "yandexgpt/latest"))
+ANTHROPIC_API_KEY = _clean(os.getenv("ANTHROPIC_API_KEY"))
+CLAUDE_MODEL = _clean(os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6"))
 
 # шанс, что бот ответит сам по себе, без триггера (0 = отключено, никогда не пишет без повода)
 RANDOM_REPLY_CHANCE = float(os.getenv("RANDOM_REPLY_CHANCE", "0"))
@@ -23,7 +22,7 @@ TRIGGER_WORDS = [
     if w.strip()
 ]
 
-# сколько последних сообщений чата подтягивать в контекст для Claude
+# сколько последних сообщений чата подтягивать в контекст
 HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "30"))
 
 # путь к файлу базы данных SQLite (лёгкая встроенная БД без отдельного сервера)

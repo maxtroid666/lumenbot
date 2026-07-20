@@ -314,7 +314,7 @@ async def clear_active_dialogue(chat_id: int, thread_id: int):
         await db.commit()
 
 
-# ---------- инициатива через час тишины (функции оставлены, но фоновый цикл их больше не вызывает) ----------
+# ---------- инициатива через час тишины ----------
 
 async def _has_later_reply(chat_id: int, thread_id: int, msg_id: int, user_id: int | None) -> bool:
     async with aiosqlite.connect(DB_PATH) as db:
